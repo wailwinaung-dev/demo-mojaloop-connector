@@ -14,7 +14,7 @@ import {
 enum Environment {
   Development = 'development',
   Production = 'production',
-  UAT = 'uat',
+  Test = 'test',
 }
 
 export class EnvironmentVariables {
