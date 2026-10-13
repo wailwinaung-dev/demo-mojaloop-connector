@@ -5,7 +5,7 @@ import { FspiopCallbackClient } from './fspiop-callback.client.js';
 import {
   FSPIOP_CONTENT_TYPES,
   FSPIOP_HEADERS,
-} from './constants/fspiop-headers.constants.js';
+} from '../headers/fspiop-headers.constants.js';
 
 describe('FspiopCallbackClient', () => {
   let client: FspiopCallbackClient;

@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { MojaloopConfigService } from '../config/mojaloop-config.service.js';
+import { MojaloopConfigService } from '../../config/mojaloop-config.service.js';
 import {
   FSPIOP_CONTENT_TYPES,
   FSPIOP_HEADERS,
-} from './constants/fspiop-headers.constants.js';
-import type { FspiopErrorPayload } from './errors/fspiop-error.model.js';
+} from '../headers/fspiop-headers.constants.js';
+import type { FspiopErrorPayload } from '../errors/fspiop-error.model.js';
 
 @Injectable()
 export class FspiopCallbackClient {

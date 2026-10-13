@@ -3,8 +3,8 @@ import {
   createParamDecorator,
   ExecutionContext,
 } from '@nestjs/common';
-import { FSPIOP_HEADERS } from '../constants/fspiop-headers.constants.js';
-import type { FspiopInboundHeaders } from '../models/fspiop-headers.interface.js';
+import { FSPIOP_HEADERS } from './fspiop-headers.constants.js';
+import type { FspiopInboundHeaders } from './fspiop-headers.interface.js';
 
 /**
  * Parses and validates FSPIOP headers from a raw headers object.
