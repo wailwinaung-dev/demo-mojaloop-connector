@@ -6,6 +6,7 @@ import { CbsModule } from './cbs/cbs.module.js';
 import { MojaloopConfigModule } from './config/mojaloop-config.module.js';
 import { FspiopModule } from './fspiop/fspiop.module.js';
 import { InboundModule } from './inbound/inbound.module.js';
+import { OutboundModule } from './outbound/outbound.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -15,6 +16,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     CbsModule,
     FspiopModule,
     InboundModule,
+    OutboundModule,
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com
     ObserveModule.forRoot({
