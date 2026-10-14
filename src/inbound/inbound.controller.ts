@@ -11,6 +11,7 @@ import type { Response } from 'express';
 import { FspiopHeaders, type FspiopInboundHeaders } from '../fspiop/index.js';
 import { InboundService } from './inbound.service.js';
 import type { QuoteRequestPayload } from './dto/quote.dto.js';
+import type { TransferRequestPayload } from './dto/transfer.dto.js';
 
 @Controller()
 export class InboundController {
@@ -52,7 +53,28 @@ export class InboundController {
   ): void {
     // 1. Immediate acknowledgment with 202 Accepted according to FSPIOP spec
     res.status(HttpStatus.ACCEPTED).send();
+
     // 2. Perform quoting, cryptographic derivation, and dispatch callback asynchronously
     void this.inboundService.handleQuoteRequest(body, headers.source);
+  }
+
+  /**
+   * Inbound Transfer Execution Endpoint (POST /transfers).
+   *
+   * Mojaloop Specification Rule:
+   * 1. Must respond immediately with HTTP 202 Accepted (empty body).
+   * 2. Asynchronously verifies ILP condition, credits payee account in CBS, and sends PUT /transfers/{id} callback with fulfillment.
+   */
+  @Post('transfers')
+  public postTransfer(
+    @Body() body: TransferRequestPayload,
+    @FspiopHeaders() headers: FspiopInboundHeaders,
+    @Res() res: Response,
+  ): void {
+    // 1. Immediate acknowledgment with 202 Accepted according to FSPIOP spec
+    res.status(HttpStatus.ACCEPTED).send();
+
+    // 2. Perform ILP verification, CBS credit, and dispatch callback asynchronously
+    void this.inboundService.handleTransferRequest(body, headers.source);
   }
 }

@@ -1,0 +1,187 @@
+{
+  "name": "Mojaloop Inbound Full P2P Golden Path",
+  "test_cases": [
+    {
+      "id": 1,
+      "name": "Inbound P2P Transfer - Alice Smith ($100 USD)",
+      "meta": {
+        "info": "Complete 3-step Inbound Payee flow: Discovery (parties) -> Agreement (quotes) -> Execution (transfers)"
+      },
+      "fileInfo": {
+        "path": "ttk-full-p2p.json",
+        "labels": ["p2p", "inbound"]
+      },
+      "requests": [
+        {
+          "id": 1,
+          "description": "Step 1: Discovery - GET /parties/MSISDN/0911111111",
+          "apiVersion": {
+            "minorVersion": 1,
+            "majorVersion": 1,
+            "type": "fspiop",
+            "asynchronous": true
+          },
+          "operationPath": "/parties/{Type}/{ID}",
+          "path": "/parties/MSISDN/0911111111",
+          "method": "get",
+          "params": {
+            "Type": "MSISDN",
+            "ID": "0911111111"
+          },
+          "headers": {
+            "FSPIOP-Source": "testingtoolkitdfsp",
+            "FSPIOP-Destination": "dfsp-b",
+            "Accept": "application/vnd.interoperability.parties+json;version=1.1",
+            "Content-Type": "application/vnd.interoperability.parties+json;version=1.1",
+            "Date": "Wed, 14 Oct 2026 05:00:00 GMT"
+          },
+          "url": "http://host.docker.internal:3000",
+          "tests": {
+            "assertions": [
+              {
+                "id": 1,
+                "description": "Response status to be 202",
+                "exec": [
+                  "expect(response.status).to.equal(202)"
+                ]
+              },
+              {
+                "id": 2,
+                "description": "Party Name is Alice Smith",
+                "exec": [
+                  "expect(callback.body.party.name).to.equal('Alice Smith')"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 2,
+          "description": "Step 2: Agreement - POST /quotes",
+          "apiVersion": {
+            "minorVersion": 1,
+            "majorVersion": 1,
+            "type": "fspiop",
+            "asynchronous": true
+          },
+          "operationPath": "/quotes",
+          "path": "/quotes",
+          "method": "post",
+          "headers": {
+            "FSPIOP-Source": "testingtoolkitdfsp",
+            "FSPIOP-Destination": "dfsp-b",
+            "Accept": "application/vnd.interoperability.quotes+json;version=1.1",
+            "Content-Type": "application/vnd.interoperability.quotes+json;version=1.1",
+            "Date": "Wed, 14 Oct 2026 05:00:01 GMT"
+          },
+          "body": {
+            "quoteId": "a1111111-2222-3333-4444-555555555555",
+            "transactionId": "b1111111-2222-3333-4444-555555555555",
+            "payer": {
+              "partyIdInfo": {
+                "partyIdType": "MSISDN",
+                "partyIdentifier": "0988888888",
+                "fspId": "testingtoolkitdfsp"
+              }
+            },
+            "payee": {
+              "partyIdInfo": {
+                "partyIdType": "MSISDN",
+                "partyIdentifier": "0911111111",
+                "fspId": "dfsp-b"
+              }
+            },
+            "amountType": "SEND",
+            "amount": {
+              "currency": "USD",
+              "amount": "100"
+            },
+            "transactionType": {
+              "scenario": "TRANSFER",
+              "initiator": "PAYER",
+              "initiatorType": "CONSUMER"
+            }
+          },
+          "url": "http://host.docker.internal:3000",
+          "tests": {
+            "assertions": [
+              {
+                "id": 1,
+                "description": "Response status to be 202",
+                "exec": [
+                  "expect(response.status).to.equal(202)"
+                ]
+              },
+              {
+                "id": 2,
+                "description": "Valid Condition & ILP Packet received",
+                "exec": [
+                  "expect(callback.body.condition).to.match(/^[A-Za-z0-9_-]{43}$/)",
+                  "expect(callback.body.ilpPacket).to.be.a('string')"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 3,
+          "description": "Step 3: Execution - POST /transfers",
+          "apiVersion": {
+            "minorVersion": 1,
+            "majorVersion": 1,
+            "type": "fspiop",
+            "asynchronous": true
+          },
+          "operationPath": "/transfers",
+          "path": "/transfers",
+          "method": "post",
+          "headers": {
+            "FSPIOP-Source": "testingtoolkitdfsp",
+            "FSPIOP-Destination": "dfsp-b",
+            "Accept": "application/vnd.interoperability.transfers+json;version=1.1",
+            "Content-Type": "application/vnd.interoperability.transfers+json;version=1.1",
+            "Date": "Wed, 14 Oct 2026 05:00:02 GMT"
+          },
+          "body": {
+            "transferId": "c1111111-2222-3333-4444-555555555555",
+            "payeeFsp": "dfsp-b",
+            "payerFsp": "testingtoolkitdfsp",
+            "amount": {
+              "currency": "USD",
+              "amount": "100"
+            },
+            "ilpPacket": "{$prev.2.callback.body.ilpPacket}",
+            "condition": "{$prev.2.callback.body.condition}",
+            "expiration": "2026-10-14T10:00:00.000Z"
+          },
+          "url": "http://host.docker.internal:3000",
+          "tests": {
+            "assertions": [
+              {
+                "id": 1,
+                "description": "Response status to be 202",
+                "exec": [
+                  "expect(response.status).to.equal(202)"
+                ]
+              },
+              {
+                "id": 2,
+                "description": "Transfer state to be COMMITTED",
+                "exec": [
+                  "expect(callback.body.transferState).to.equal('COMMITTED')"
+                ]
+              },
+              {
+                "id": 3,
+                "description": "Valid 43-character fulfillment returned",
+                "exec": [
+                  "expect(callback.body.fulfillment).to.match(/^[A-Za-z0-9_-]{43}$/)"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

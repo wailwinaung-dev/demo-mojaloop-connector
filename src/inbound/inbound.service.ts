@@ -6,6 +6,7 @@ import {
   IlpService,
   PreimageStoreService,
   createIlpPreparePacket,
+  parseIlpPreparePacket,
 } from '../fspiop/index.js';
 import { MojaloopConfigService } from '../config/mojaloop-config.service.js';
 import type { PartyResponsePayload } from './dto/party.dto.js';
@@ -13,6 +14,10 @@ import type {
   QuoteRequestPayload,
   QuoteResponsePayload,
 } from './dto/quote.dto.js';
+import type {
+  TransferRequestPayload,
+  TransferResponsePayload,
+} from './dto/transfer.dto.js';
 
 @Injectable()
 export class InboundService {
@@ -86,7 +91,12 @@ export class InboundService {
       );
 
       // 5. Dispatch PUT /parties/{Type}/{ID} callback
-      await this.callbackClient.sendPartyCallback(type, id, payload, sourceFsp);
+      await this.callbackClient.sendPartyCallback(
+        type,
+        id,
+        payload,
+        sourceFsp,
+      );
     } catch (err: any) {
       this.logger.error(
         `Unexpected error during party lookup: ${err.message}`,
@@ -235,6 +245,150 @@ export class InboundService {
       );
       await this.callbackClient.sendErrorCallback(
         `/quotes/${quoteId}/error`,
+        genericError,
+        sourceFsp,
+      );
+    }
+  }
+
+  /**
+   * Handles an asynchronous incoming transfer execution request (POST /transfers).
+   * Validates cryptographic ILP condition against stored preimage, credits payee account in CBS,
+   * and dispatches PUT /transfers/{id} callback with fulfillment and 'COMMITTED' state to the Switch.
+   */
+  public async handleTransferRequest(
+    transferRequest: TransferRequestPayload,
+    sourceFsp: string,
+  ): Promise<void> {
+    const { transferId, amount, condition, ilpPacket } = transferRequest;
+    this.logger.log(
+      `Processing Transfer Request: TransferID=${transferId}, Amount=${amount.amount} ${amount.currency}, Condition=${condition}, Requester=${sourceFsp}`,
+    );
+
+    try {
+      // 1. Verify ILP Condition against stored Preimage in PreimageStore
+      const storedRecord = this.preimageStore.getByCondition(condition);
+      if (!storedRecord) {
+        this.logger.warn(
+          `Condition not found or expired in PreimageStore: ${condition}`,
+        );
+        const errorPayload = FspiopErrors.genericTransferError(
+          'Transfer condition not found or expired',
+        );
+        await this.callbackClient.sendErrorCallback(
+          `/transfers/${transferId}/error`,
+          errorPayload,
+          sourceFsp,
+        );
+        return;
+      }
+
+      // 2. Parse and validate ILP Prepare Packet
+      let parsedPacket: ReturnType<typeof parseIlpPreparePacket>;
+      try {
+        parsedPacket = parseIlpPreparePacket(ilpPacket);
+      } catch (parseErr: any) {
+        this.logger.warn(`Failed to parse ILP Packet: ${parseErr.message}`);
+        const errorPayload = FspiopErrors.genericTransferError(
+          'Invalid ILP Packet structure',
+        );
+        await this.callbackClient.sendErrorCallback(
+          `/transfers/${transferId}/error`,
+          errorPayload,
+          sourceFsp,
+        );
+        return;
+      }
+
+      // Verify packet execution condition matches transfer condition
+      if (parsedPacket.executionCondition !== condition) {
+        this.logger.warn(
+          `ILP Packet condition mismatch: packet=${parsedPacket.executionCondition}, transfer=${condition}`,
+        );
+        const errorPayload = FspiopErrors.genericTransferError(
+          'ILP Packet condition does not match transfer condition',
+        );
+        await this.callbackClient.sendErrorCallback(
+          `/transfers/${transferId}/error`,
+          errorPayload,
+          sourceFsp,
+        );
+        return;
+      }
+
+      // 3. Extract Payee Account from destination address
+      // e.g. "g.mojaloop.dfsp-b.0911111111"
+      const destinationParts = parsedPacket.destination.split('.');
+      const payeeIdentifier = destinationParts[destinationParts.length - 1];
+      const account = this.cbsService.lookupByIdentifier(
+        'MSISDN',
+        payeeIdentifier,
+      );
+
+      if (!account) {
+        this.logger.warn(`Payee account not found in CBS: ${payeeIdentifier}`);
+        const errorPayload = FspiopErrors.idNotFound(payeeIdentifier);
+        await this.callbackClient.sendErrorCallback(
+          `/transfers/${transferId}/error`,
+          errorPayload,
+          sourceFsp,
+        );
+        return;
+      }
+
+      // 4. Credit account in Core Banking System
+      try {
+        this.cbsService.credit(
+          account.id,
+          Number(amount.amount),
+          amount.currency,
+        );
+        this.logger.log(
+          `Successfully credited ${amount.amount} ${amount.currency} to ${account.name} (${account.id}). New Balance: ${account.balance}`,
+        );
+      } catch (cbsErr: any) {
+        this.logger.error(`CBS Credit failed: ${cbsErr.message}`, cbsErr.stack);
+        const errorPayload = FspiopErrors.genericTransferError(
+          `CBS Credit failed: ${cbsErr.message}`,
+        );
+        await this.callbackClient.sendErrorCallback(
+          `/transfers/${transferId}/error`,
+          errorPayload,
+          sourceFsp,
+        );
+        return;
+      }
+
+      // 5. Remove preimage from store now that transfer has committed
+      this.preimageStore.delete(storedRecord.quoteId);
+
+      // 6. Construct Mojaloop FSPIOP v1.1 Transfer Response Payload
+      const responsePayload: TransferResponsePayload = {
+        fulfillment: storedRecord.fulfillment,
+        completedTimestamp: new Date().toISOString(),
+        transferState: 'COMMITTED',
+      };
+
+      this.logger.log(
+        `Transfer COMMITTED for TransferID=${transferId}. Fulfillment=${storedRecord.fulfillment}. Sending PUT callback to ${sourceFsp}...`,
+      );
+
+      // 7. Dispatch PUT /transfers/{transferId} callback to Switch
+      await this.callbackClient.sendTransferCallback(
+        transferId,
+        responsePayload,
+        sourceFsp,
+      );
+    } catch (err: any) {
+      this.logger.error(
+        `Unexpected error during transfer execution: ${err.message}`,
+        err.stack,
+      );
+      const genericError = FspiopErrors.genericTransferError(
+        'Internal error during transfer execution',
+      );
+      await this.callbackClient.sendErrorCallback(
+        `/transfers/${transferId}/error`,
         genericError,
         sourceFsp,
       );

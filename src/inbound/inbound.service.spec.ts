@@ -3,7 +3,9 @@ import { InboundService } from './inbound.service.js';
 import { CbsService } from '../cbs/cbs.service.js';
 import { IlpService } from '../fspiop/ilp/ilp.service.js';
 import { PreimageStoreService } from '../fspiop/ilp/preimage-store.service.js';
+import { createIlpPreparePacket } from '../fspiop/ilp/ilp-packet.util.js';
 import type { QuoteRequestPayload } from './dto/quote.dto.js';
+import type { TransferRequestPayload } from './dto/transfer.dto.js';
 
 describe('InboundService', () => {
   let inboundService: InboundService;
@@ -13,18 +15,20 @@ describe('InboundService', () => {
   let mockCallbackClient: {
     sendPartyCallback: ReturnType<typeof vi.fn>;
     sendQuoteCallback: ReturnType<typeof vi.fn>;
+    sendTransferCallback: ReturnType<typeof vi.fn>;
     sendErrorCallback: ReturnType<typeof vi.fn>;
   };
   let mockConfig: { dfspId: string; quoteExpirySeconds: number };
 
   beforeEach(() => {
-    cbsService = new CbsService(); // Uses seed accounts: Alice (0911111111), Bob (0922222222)
+    cbsService = new CbsService(); // Uses seed accounts: Alice (0911111111, bal: $1000), Bob (0922222222, bal: $500)
     ilpService = new IlpService();
     preimageStore = new PreimageStoreService();
 
     mockCallbackClient = {
       sendPartyCallback: vi.fn().mockResolvedValue({}),
       sendQuoteCallback: vi.fn().mockResolvedValue({}),
+      sendTransferCallback: vi.fn().mockResolvedValue({}),
       sendErrorCallback: vi.fn().mockResolvedValue({}),
     };
 
@@ -77,7 +81,6 @@ describe('InboundService', () => {
     });
 
     it('should dispatch Error 3202 (ID Not Active) when account is not active', async () => {
-      // Change Alice account status to SUSPENDED for test
       const alice = cbsService.getAccount('acc-alice');
       alice.status = 'SUSPENDED';
 
@@ -197,7 +200,7 @@ describe('InboundService', () => {
       expect(errorPayload.errorInformation.errorCode).toBe('3202');
     });
 
-    it('should dispatch Error 3205 when requested currency does not match account currency', async () => {
+    it('should dispatch Error 5202 when requested currency does not match account currency', async () => {
       const currencyMismatchRequest: QuoteRequestPayload = {
         ...validQuoteRequest,
         amount: {
@@ -215,6 +218,127 @@ describe('InboundService', () => {
         mockCallbackClient.sendErrorCallback.mock.calls[0];
       expect(endpoint).toBe('/quotes/quote-1001/error');
       expect(errorPayload.errorInformation.errorCode).toBe('5202');
+    });
+  });
+
+  describe('handleTransferRequest', () => {
+    let testPair: { fulfillment: string; condition: string };
+    let validIlpPacket: string;
+    let validTransferRequest: TransferRequestPayload;
+
+    beforeEach(() => {
+      testPair = ilpService.generatePreimageAndCondition();
+      preimageStore.save('quote-555', testPair.fulfillment, testPair.condition, 60);
+
+      validIlpPacket = createIlpPreparePacket({
+        amount: '100',
+        executionCondition: testPair.condition,
+        expiresAt: new Date(Date.now() + 60000),
+        destination: 'g.mojaloop.dfsp-b.0911111111',
+        data: { quoteId: 'quote-555' },
+      });
+
+      validTransferRequest = {
+        transferId: 'transfer-777',
+        payeeFsp: 'dfsp-b',
+        payerFsp: 'dfsp-a',
+        amount: {
+          currency: 'USD',
+          amount: '100',
+        },
+        ilpPacket: validIlpPacket,
+        condition: testPair.condition,
+        expiration: new Date(Date.now() + 60000).toISOString(),
+      };
+    });
+
+    it('should successfully execute transfer, credit CBS account, and dispatch PUT /transfers/{id} with COMMITTED state', async () => {
+      const aliceBefore = cbsService.getAccount('acc-alice');
+      expect(aliceBefore.balance).toBe(1000.0);
+
+      await inboundService.handleTransferRequest(validTransferRequest, 'dfsp-a');
+
+      // 1. Verify callback sent
+      expect(mockCallbackClient.sendTransferCallback).toHaveBeenCalledTimes(1);
+      const [transferId, responsePayload, destination] =
+        mockCallbackClient.sendTransferCallback.mock.calls[0];
+
+      expect(transferId).toBe('transfer-777');
+      expect(destination).toBe('dfsp-a');
+      expect(responsePayload.transferState).toBe('COMMITTED');
+      expect(responsePayload.fulfillment).toBe(testPair.fulfillment);
+
+      // 2. Verify CBS account balance increased by $100
+      const aliceAfter = cbsService.getAccount('acc-alice');
+      expect(aliceAfter.balance).toBe(1100.0);
+
+      // 3. Verify preimage was consumed and cleared
+      expect(preimageStore.getByQuoteId('quote-555')).toBeNull();
+    });
+
+    it('should dispatch Error callback when condition is not found or expired in PreimageStore', async () => {
+      const unknownConditionRequest = {
+        ...validTransferRequest,
+        condition: 'UnknownConditionHash43CharsBase64urlFormat__',
+      };
+
+      await inboundService.handleTransferRequest(
+        unknownConditionRequest,
+        'dfsp-a',
+      );
+
+      expect(mockCallbackClient.sendTransferCallback).not.toHaveBeenCalled();
+      expect(mockCallbackClient.sendErrorCallback).toHaveBeenCalledTimes(1);
+
+      const [endpoint] = mockCallbackClient.sendErrorCallback.mock.calls[0];
+      expect(endpoint).toBe('/transfers/transfer-777/error');
+    });
+
+    it('should dispatch Error callback when ILP packet condition does not match transfer condition', async () => {
+      const differentPair = ilpService.generatePreimageAndCondition();
+      const mismatchedPacket = createIlpPreparePacket({
+        amount: '100',
+        executionCondition: differentPair.condition,
+        expiresAt: new Date(Date.now() + 60000),
+        destination: 'g.mojaloop.dfsp-b.0911111111',
+      });
+
+      const mismatchedRequest = {
+        ...validTransferRequest,
+        ilpPacket: mismatchedPacket,
+      };
+
+      await inboundService.handleTransferRequest(mismatchedRequest, 'dfsp-a');
+
+      expect(mockCallbackClient.sendTransferCallback).not.toHaveBeenCalled();
+      expect(mockCallbackClient.sendErrorCallback).toHaveBeenCalledTimes(1);
+
+      const [endpoint] = mockCallbackClient.sendErrorCallback.mock.calls[0];
+      expect(endpoint).toBe('/transfers/transfer-777/error');
+    });
+
+    it('should dispatch Error callback when Payee account does not exist in CBS', async () => {
+      const nonExistentPayeePacket = createIlpPreparePacket({
+        amount: '100',
+        executionCondition: testPair.condition,
+        expiresAt: new Date(Date.now() + 60000),
+        destination: 'g.mojaloop.dfsp-b.0999999999', // non-existent MSISDN
+      });
+
+      const nonExistentRequest = {
+        ...validTransferRequest,
+        ilpPacket: nonExistentPayeePacket,
+      };
+
+      await inboundService.handleTransferRequest(nonExistentRequest, 'dfsp-a');
+
+      expect(mockCallbackClient.sendTransferCallback).not.toHaveBeenCalled();
+      expect(mockCallbackClient.sendErrorCallback).toHaveBeenCalledTimes(1);
+
+      const [endpoint, errorPayload] =
+        mockCallbackClient.sendErrorCallback.mock.calls[0];
+      expect(endpoint).toBe('/transfers/transfer-777/error');
+      expect(errorPayload.errorInformation.errorCode).toBe('3200');
     });
   });
 });
