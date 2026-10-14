@@ -1,0 +1,124 @@
+{
+  "name": "Mojaloop Inbound Party Lookup",
+  "test_cases": [
+    {
+      "id": 1,
+      "name": "Party Lookup - Alice Smith (Success)",
+      "meta": {
+        "info": "Query Alice Smith (0911111111) from Inbound Connector and verify 202 + PUT callback"
+      },
+      "fileInfo": {
+        "path": "ttk-party-lookup.json",
+        "labels": ["parties"]
+      },
+      "requests": [
+        {
+          "id": 1,
+          "description": "GET /parties/MSISDN/0911111111",
+          "apiVersion": {
+            "minorVersion": 1,
+            "majorVersion": 1,
+            "type": "fspiop",
+            "asynchronous": true
+          },
+          "operationPath": "/parties/{Type}/{ID}",
+          "path": "/parties/MSISDN/0911111111",
+          "method": "get",
+          "params": {
+            "Type": "MSISDN",
+            "ID": "0911111111"
+          },
+          "headers": {
+            "FSPIOP-Source": "testingtoolkitdfsp",
+            "FSPIOP-Destination": "dfsp-b",
+            "Accept": "application/vnd.interoperability.parties+json;version=1.1",
+            "Content-Type": "application/vnd.interoperability.parties+json;version=1.1",
+            "Date": "Wed, 14 Oct 2026 03:00:00 GMT"
+          },
+          "url": "http://host.docker.internal:3000",
+          "tests": {
+            "assertions": [
+              {
+                "id": 1,
+                "description": "Response status to be 202",
+                "exec": [
+                  "expect(response.status).to.equal(202)"
+                ]
+              },
+              {
+                "id": 2,
+                "description": "Party Identifier to be 0911111111",
+                "exec": [
+                  "expect(callback.body.party.partyIdInfo.partyIdentifier).to.equal('0911111111')"
+                ]
+              },
+              {
+                "id": 3,
+                "description": "Party Name is Alice Smith",
+                "exec": [
+                  "expect(callback.body.party.name).to.equal('Alice Smith')"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Party Lookup - Non-existent Account (Error 3200)",
+      "meta": {
+        "info": "Query non-existent ID (0999999999) and verify 202 + Error Callback 3200"
+      },
+      "fileInfo": {
+        "path": "ttk-party-lookup.json",
+        "labels": ["parties"]
+      },
+      "requests": [
+        {
+          "id": 1,
+          "description": "GET /parties/MSISDN/0999999999",
+          "apiVersion": {
+            "minorVersion": 1,
+            "majorVersion": 1,
+            "type": "fspiop",
+            "asynchronous": true
+          },
+          "operationPath": "/parties/{Type}/{ID}",
+          "path": "/parties/MSISDN/0999999999",
+          "method": "get",
+          "params": {
+            "Type": "MSISDN",
+            "ID": "0999999999"
+          },
+          "headers": {
+            "FSPIOP-Source": "testingtoolkitdfsp",
+            "FSPIOP-Destination": "dfsp-b",
+            "Accept": "application/vnd.interoperability.parties+json;version=1.1",
+            "Content-Type": "application/vnd.interoperability.parties+json;version=1.1",
+            "Date": "Wed, 14 Oct 2026 03:00:00 GMT"
+          },
+          "url": "http://host.docker.internal:3000",
+          "tests": {
+            "assertions": [
+              {
+                "id": 1,
+                "description": "Response status to be 202",
+                "exec": [
+                  "expect(response.status).to.equal(202)"
+                ]
+              },
+              {
+                "id": 2,
+                "description": "Error code to be 3200",
+                "exec": [
+                  "expect(callback.body.errorInformation.errorCode).to.equal('3200')"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
