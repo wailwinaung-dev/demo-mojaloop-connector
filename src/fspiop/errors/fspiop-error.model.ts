@@ -78,4 +78,11 @@ export const FspiopErrors = {
       'Generic transfer error',
       message,
     ),
+
+  genericQuoteError: (message: string) =>
+    createFspiopError(
+      FSPIOP_ERROR_CODES.GENERIC_QUOTE_ERROR,
+      'Generic quote error',
+      message,
+    ),
 };

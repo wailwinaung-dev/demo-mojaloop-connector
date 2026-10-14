@@ -1,32 +1,44 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InboundService } from './inbound.service.js';
 import { CbsService } from '../cbs/cbs.service.js';
+import { IlpService } from '../fspiop/ilp/ilp.service.js';
+import { PreimageStoreService } from '../fspiop/ilp/preimage-store.service.js';
+import type { QuoteRequestPayload } from './dto/quote.dto.js';
 
 describe('InboundService', () => {
   let inboundService: InboundService;
   let cbsService: CbsService;
+  let ilpService: IlpService;
+  let preimageStore: PreimageStoreService;
   let mockCallbackClient: {
     sendPartyCallback: ReturnType<typeof vi.fn>;
+    sendQuoteCallback: ReturnType<typeof vi.fn>;
     sendErrorCallback: ReturnType<typeof vi.fn>;
   };
-  let mockConfig: { dfspId: string };
+  let mockConfig: { dfspId: string; quoteExpirySeconds: number };
 
   beforeEach(() => {
     cbsService = new CbsService(); // Uses seed accounts: Alice (0911111111), Bob (0922222222)
+    ilpService = new IlpService();
+    preimageStore = new PreimageStoreService();
 
     mockCallbackClient = {
       sendPartyCallback: vi.fn().mockResolvedValue({}),
+      sendQuoteCallback: vi.fn().mockResolvedValue({}),
       sendErrorCallback: vi.fn().mockResolvedValue({}),
     };
 
     mockConfig = {
       dfspId: 'dfsp-b',
+      quoteExpirySeconds: 60,
     };
 
     inboundService = new InboundService(
       cbsService,
       mockCallbackClient as any,
       mockConfig as any,
+      ilpService,
+      preimageStore,
     );
   });
 
@@ -78,6 +90,131 @@ describe('InboundService', () => {
         mockCallbackClient.sendErrorCallback.mock.calls[0];
       expect(endpoint).toBe('/parties/MSISDN/0911111111/error');
       expect(errorPayload.errorInformation.errorCode).toBe('3202');
+    });
+  });
+
+  describe('handleQuoteRequest', () => {
+    const validQuoteRequest: QuoteRequestPayload = {
+      quoteId: 'quote-1001',
+      transactionId: 'tx-2001',
+      payer: {
+        partyIdInfo: {
+          partyIdType: 'MSISDN',
+          partyIdentifier: '0988888888',
+          fspId: 'dfsp-a',
+        },
+      },
+      payee: {
+        partyIdInfo: {
+          partyIdType: 'MSISDN',
+          partyIdentifier: '0911111111',
+          fspId: 'dfsp-b',
+        },
+      },
+      amountType: 'SEND',
+      amount: {
+        currency: 'USD',
+        amount: '100',
+      },
+      transactionType: {
+        scenario: 'TRANSFER',
+        initiator: 'PAYER',
+        initiatorType: 'CONSUMER',
+      },
+    };
+
+    it('should successfully generate quote terms, ILP condition, and dispatch PUT /quotes/{id}', async () => {
+      await inboundService.handleQuoteRequest(validQuoteRequest, 'dfsp-a');
+
+      expect(mockCallbackClient.sendQuoteCallback).toHaveBeenCalledTimes(1);
+      const [quoteId, responsePayload, destination] =
+        mockCallbackClient.sendQuoteCallback.mock.calls[0];
+
+      expect(quoteId).toBe('quote-1001');
+      expect(destination).toBe('dfsp-a');
+      expect(responsePayload.transferAmount).toEqual({
+        currency: 'USD',
+        amount: '100',
+      });
+      expect(responsePayload.payeeReceiveAmount).toEqual({
+        currency: 'USD',
+        amount: '100',
+      });
+      expect(responsePayload.payeeFspFee).toEqual({
+        currency: 'USD',
+        amount: '0',
+      });
+      expect(responsePayload.condition).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(typeof responsePayload.ilpPacket).toBe('string');
+      expect(responsePayload.ilpPacket.length).toBeGreaterThan(0);
+
+      // Verify that preimage is securely stored in PreimageStore
+      const stored = preimageStore.getByQuoteId('quote-1001');
+      expect(stored).not.toBeNull();
+      expect(stored!.condition).toBe(responsePayload.condition);
+      expect(
+        ilpService.verifyFulfillment(stored!.fulfillment, stored!.condition),
+      ).toBe(true);
+    });
+
+    it('should dispatch Error 3200 when payee account is not found in CBS', async () => {
+      const nonExistentPayeeRequest: QuoteRequestPayload = {
+        ...validQuoteRequest,
+        quoteId: 'quote-404',
+        payee: {
+          partyIdInfo: {
+            partyIdType: 'MSISDN',
+            partyIdentifier: '0999999999',
+            fspId: 'dfsp-b',
+          },
+        },
+      };
+
+      await inboundService.handleQuoteRequest(nonExistentPayeeRequest, 'dfsp-a');
+
+      expect(mockCallbackClient.sendQuoteCallback).not.toHaveBeenCalled();
+      expect(mockCallbackClient.sendErrorCallback).toHaveBeenCalledTimes(1);
+
+      const [endpoint, errorPayload, destination] =
+        mockCallbackClient.sendErrorCallback.mock.calls[0];
+      expect(endpoint).toBe('/quotes/quote-404/error');
+      expect(destination).toBe('dfsp-a');
+      expect(errorPayload.errorInformation.errorCode).toBe('3200');
+    });
+
+    it('should dispatch Error 3202 when payee account is not active', async () => {
+      const alice = cbsService.getAccount('acc-alice');
+      alice.status = 'SUSPENDED';
+
+      await inboundService.handleQuoteRequest(validQuoteRequest, 'dfsp-a');
+
+      expect(mockCallbackClient.sendQuoteCallback).not.toHaveBeenCalled();
+      expect(mockCallbackClient.sendErrorCallback).toHaveBeenCalledTimes(1);
+
+      const [endpoint, errorPayload] =
+        mockCallbackClient.sendErrorCallback.mock.calls[0];
+      expect(endpoint).toBe('/quotes/quote-1001/error');
+      expect(errorPayload.errorInformation.errorCode).toBe('3202');
+    });
+
+    it('should dispatch Error 3205 when requested currency does not match account currency', async () => {
+      const currencyMismatchRequest: QuoteRequestPayload = {
+        ...validQuoteRequest,
+        amount: {
+          currency: 'EUR',
+          amount: '100',
+        },
+      };
+
+      await inboundService.handleQuoteRequest(currencyMismatchRequest, 'dfsp-a');
+
+      expect(mockCallbackClient.sendQuoteCallback).not.toHaveBeenCalled();
+      expect(mockCallbackClient.sendErrorCallback).toHaveBeenCalledTimes(1);
+
+      const [endpoint, errorPayload] =
+        mockCallbackClient.sendErrorCallback.mock.calls[0];
+      expect(endpoint).toBe('/quotes/quote-1001/error');
+      expect(errorPayload.errorInformation.errorCode).toBe('5202');
     });
   });
 });
