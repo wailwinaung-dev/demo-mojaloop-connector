@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   HttpStatus,
-  NotFoundException,
   Param,
   Post,
   Put,
@@ -15,8 +14,10 @@ import { OutboundService } from './outbound.service.js';
 import { CallbackWaiterService } from './waiter/callback-waiter.service.js';
 import type { PartyResponsePayload } from '../inbound/dto/party.dto.js';
 import type { FspiopErrorPayload } from '../fspiop/errors/fspiop-error.model.js';
+import { mapFspiopErrorToHttpException } from '../fspiop/errors/fspiop-error.mapper.js';
 import type { OutboundQuoteRequestDto } from './dto/outbound-quote.dto.js';
 import type { QuoteResponsePayload } from '../inbound/dto/quote.dto.js';
+
 
 
 @Controller()
@@ -69,18 +70,12 @@ export class OutboundController {
     @Res() res: Response,
   ): void {
     const correlationKey = `party:${type.toUpperCase()}:${id}`;
-    const desc = body.errorInformation?.errorDescription || 'Party not found';
-    const code = body.errorInformation?.errorCode || '3200';
-
-    this.waiterService.reject(
-      correlationKey,
-      new NotFoundException(`[${code}] ${desc}`),
-    );
+    const httpException = mapFspiopErrorToHttpException(body);
+    this.waiterService.reject(correlationKey, httpException);
 
     // Acknowledge receipt of the error callback to the Switch
     res.status(HttpStatus.OK).send();
   }
-
 
   /**
    * Client-facing Synchronous API for requesting a Quote.
@@ -121,14 +116,11 @@ export class OutboundController {
     @Res() res: Response,
   ): void {
     const correlationKey = `quote:${quoteId}`;
-    this.waiterService.reject(
-      correlationKey,
-      new Error(
-        `Quote rejected by Switch: ${body.errorInformation?.errorDescription || 'Unknown error'}`,
-      ),
-    );
+    const httpException = mapFspiopErrorToHttpException(body);
+    this.waiterService.reject(correlationKey, httpException);
 
     res.status(HttpStatus.OK).send();
   }
 }
+
 

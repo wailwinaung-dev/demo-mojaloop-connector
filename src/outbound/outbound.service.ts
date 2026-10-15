@@ -15,7 +15,7 @@ import type {
   QuoteResponsePayload,
 } from '../inbound/dto/quote.dto.js';
 import { formatMojaloopAmount } from '../fspiop/utils/amount.util.js';
-
+import { mapFspiopErrorToHttpException } from '../fspiop/errors/fspiop-error.mapper.js';
 
 @Injectable()
 export class OutboundService {
@@ -73,18 +73,15 @@ export class OutboundService {
       this.logger.log(
         `Switch accepted discovery request: ${res.status} ${res.statusText}. Waiting for callback...`,
       );
-    } catch (err: any) {
-      console.error(err);
+    } catch (err: unknown) {
       const errorDetail = this.extractErrorMessage(err);
       this.logger.error(
         `Failed to send GET /parties to Switch: ${errorDetail}`,
-        err.stack,
+        (err as any)?.stack,
       );
       // Clean up waiter to prevent leaks
       this.waiterService.clear();
-      throw new BadRequestException(
-        `Failed to dispatch party discovery to Switch: ${errorDetail}`,
-      );
+      throw mapFspiopErrorToHttpException(err);
     }
 
     // 3. Await the callback arriving from the Switch
@@ -149,7 +146,7 @@ export class OutboundService {
     const headers: Record<string, string> = {
       [FSPIOP_HEADERS.SOURCE]: this.config.dfspId,
       [FSPIOP_HEADERS.DESTINATION]: dto.payeeFsp,
-      [FSPIOP_HEADERS.DATE]: new Date().toUTCString(),
+      // [FSPIOP_HEADERS.DATE]: new Date().toUTCString(),
       Accept: FSPIOP_CONTENT_TYPES.QUOTES,
       'Content-Type': FSPIOP_CONTENT_TYPES.QUOTES,
     };
@@ -166,17 +163,14 @@ export class OutboundService {
       this.logger.log(
         `Switch accepted quote request: ${res.status} ${res.statusText}. Waiting for callback...`,
       );
-    } catch (err: any) {
-      console.error(err);
+    } catch (err: unknown) {
       const errorDetail = this.extractErrorMessage(err);
       this.logger.error(
         `Failed to send POST /quotes to Switch: ${errorDetail}`,
-        err.stack,
+        (err as any)?.stack,
       );
       this.waiterService.clear();
-      throw new BadRequestException(
-        `Failed to dispatch quote request to Switch: ${errorDetail}`,
-      );
+      throw mapFspiopErrorToHttpException(err);
     }
 
     // 4. Await the callback arriving from the Switch
@@ -195,4 +189,3 @@ export class OutboundService {
     return err?.message || 'Unknown error occurred';
   }
 }
-

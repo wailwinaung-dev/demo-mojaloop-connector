@@ -88,7 +88,7 @@ describe('OutboundService', () => {
 
     await expect(
       outboundService.lookupParty('MSISDN', '0922222222'),
-    ).rejects.toThrow('Failed to dispatch party discovery to Switch');
+    ).rejects.toThrow('Switch network error');
 
     expect(waiterService.activeWaitersCount).toBe(0);
   });
@@ -160,7 +160,7 @@ describe('OutboundService', () => {
     };
 
     await expect(outboundService.requestQuote(quoteDto)).rejects.toThrow(
-      'Failed to dispatch quote request to Switch',
+      'Switch network error',
     );
 
     expect(waiterService.activeWaitersCount).toBe(0);
