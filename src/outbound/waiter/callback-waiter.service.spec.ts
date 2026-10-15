@@ -23,13 +23,72 @@ describe('CallbackWaiterService', () => {
     expect(result).toEqual({ name: 'Alice Smith' });
   });
 
-  it('should reject with GatewayTimeoutException when timeout elapses', async () => {
+  it('should reject with GatewayTimeoutException with structured 504 format when timeout elapses', async () => {
     const promise = waiterService.waitFor('party:MSISDN:0999999999', 3000);
 
-    // Fast forward past timeout
     vi.advanceTimersByTime(3001);
 
-    await expect(promise).rejects.toThrow(GatewayTimeoutException);
+    try {
+      await promise;
+      expect.fail('Should have thrown GatewayTimeoutException');
+    } catch (err: any) {
+      expect(err).toBeInstanceOf(GatewayTimeoutException);
+      const res = err.getResponse();
+      expect(res.statusCode).toBe(504);
+      expect(res.error).toBe('Gateway Timeout');
+      expect(res.mojaloopErrorCode).toBe('1001');
+      expect(res.message).toContain('party:MSISDN:0999999999');
+    }
+
+    expect(waiterService.activeWaitersCount).toBe(0);
+  });
+
+  it('should support register() and delayed wait() without arming timer prematurely', async () => {
+    const handle = waiterService.register<{ status: string }>('quote:123');
+    expect(waiterService.activeWaitersCount).toBe(1);
+
+    // Fast forward 4000ms: timer should not have been armed yet
+    vi.advanceTimersByTime(4000);
+    expect(waiterService.activeWaitersCount).toBe(1);
+
+    // Now arm wait with 3000ms
+    const waitPromise = handle.wait(3000);
+
+    // Fast forward another 2000ms (total 6000ms from register): still alive
+    vi.advanceTimersByTime(2000);
+    expect(waiterService.activeWaitersCount).toBe(1);
+
+    // Resolve now
+    waiterService.resolve('quote:123', { status: 'AGREED' });
+    const result = await waitPromise;
+    expect(result).toEqual({ status: 'AGREED' });
+    expect(waiterService.activeWaitersCount).toBe(0);
+  });
+
+  it('should handle callback arriving before wait() is called', async () => {
+    const handle = waiterService.register<{ status: string }>('quote:early');
+    expect(waiterService.activeWaitersCount).toBe(1);
+
+    // Callback arrives immediately (e.g. while HTTP dispatch was in flight)
+    waiterService.resolve('quote:early', { status: 'EARLY_RESOLVE' });
+    expect(waiterService.activeWaitersCount).toBe(0);
+
+    // Caller now invokes wait()
+    const result = await handle.wait(5000);
+    expect(result).toEqual({ status: 'EARLY_RESOLVE' });
+  });
+
+  it('should cancel only the specified waiter without affecting others', () => {
+    waiterService.register('key-1');
+    waiterService.register('key-2');
+    expect(waiterService.activeWaitersCount).toBe(2);
+
+    const cancelled = waiterService.cancel('key-1');
+    expect(cancelled).toBe(true);
+    expect(waiterService.activeWaitersCount).toBe(1);
+
+    // key-2 should still be resolvable
+    expect(waiterService.resolve('key-2', 'ok')).toBe(true);
     expect(waiterService.activeWaitersCount).toBe(0);
   });
 
@@ -44,8 +103,9 @@ describe('CallbackWaiterService', () => {
     expect(waiterService.activeWaitersCount).toBe(0);
   });
 
-  it('should return false when resolving or rejecting a non-existent key', () => {
+  it('should return false when resolving, rejecting, or cancelling a non-existent key', () => {
     expect(waiterService.resolve('non-existent-key', {})).toBe(false);
     expect(waiterService.reject('non-existent-key', new Error())).toBe(false);
+    expect(waiterService.cancel('non-existent-key')).toBe(false);
   });
 });

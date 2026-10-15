@@ -43,10 +43,7 @@ export class OutboundService {
     );
 
     // 1. Register a waiter for the incoming asynchronous callback
-    const waiterPromise = this.waiterService.waitFor<PartyResponsePayload>(
-      correlationKey,
-      this.config.callbackTimeoutMs,
-    );
+    const waiter = this.waiterService.register<PartyResponsePayload>(correlationKey);
 
     // 2. Dispatch GET /parties/{Type}/{ID} to Mojaloop Switch
     const hubBase = this.config.hubBaseUrl.replace(/\/$/, '');
@@ -66,7 +63,7 @@ export class OutboundService {
       const res = await firstValueFrom(
         this.httpService.get(targetUrl, {
           headers,
-          timeout: this.config.callbackTimeoutMs,
+          timeout: 3000,
         }),
       );
 
@@ -80,12 +77,12 @@ export class OutboundService {
         (err as any)?.stack,
       );
       // Clean up waiter to prevent leaks
-      this.waiterService.clear();
+      this.waiterService.cancel(correlationKey);
       throw mapFspiopErrorToHttpException(err);
     }
 
-    // 3. Await the callback arriving from the Switch
-    return await waiterPromise;
+    // 3. Await the callback arriving from the Switch (starts callbackTimeout countdown)
+    return await waiter.wait(this.config.callbackTimeoutMs);
   }
 
   /**
@@ -104,10 +101,7 @@ export class OutboundService {
     );
 
     // 1. Register a waiter for the incoming asynchronous callback
-    const waiterPromise = this.waiterService.waitFor<QuoteResponsePayload>(
-      correlationKey,
-      this.config.callbackTimeoutMs,
-    );
+    const waiter = this.waiterService.register<QuoteResponsePayload>(correlationKey);
 
     // 2. Build standard Mojaloop FSPIOP POST /quotes payload
     const payload: QuoteRequestPayload = {
@@ -156,7 +150,7 @@ export class OutboundService {
       const res = await firstValueFrom(
         this.httpService.post(targetUrl, payload, {
           headers,
-          timeout: this.config.callbackTimeoutMs,
+          timeout: 3000,
         }),
       );
 
@@ -169,12 +163,12 @@ export class OutboundService {
         `Failed to send POST /quotes to Switch: ${errorDetail}`,
         (err as any)?.stack,
       );
-      this.waiterService.clear();
+      this.waiterService.cancel(correlationKey);
       throw mapFspiopErrorToHttpException(err);
     }
 
-    // 4. Await the callback arriving from the Switch
-    return await waiterPromise;
+    // 4. Await the callback arriving from the Switch (starts callbackTimeout countdown)
+    return await waiter.wait(this.config.callbackTimeoutMs);
   }
 
   /**
