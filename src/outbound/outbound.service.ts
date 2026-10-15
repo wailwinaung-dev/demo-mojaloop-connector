@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -8,6 +9,13 @@ import {
 } from '../fspiop/headers/fspiop-headers.constants.js';
 import { CallbackWaiterService } from './waiter/callback-waiter.service.js';
 import type { PartyResponsePayload } from '../inbound/dto/party.dto.js';
+import type { OutboundQuoteRequestDto } from './dto/outbound-quote.dto.js';
+import type {
+  QuoteRequestPayload,
+  QuoteResponsePayload,
+} from '../inbound/dto/quote.dto.js';
+import { formatMojaloopAmount } from '../fspiop/utils/amount.util.js';
+
 
 @Injectable()
 export class OutboundService {
@@ -67,18 +75,124 @@ export class OutboundService {
       );
     } catch (err: any) {
       console.error(err);
+      const errorDetail = this.extractErrorMessage(err);
       this.logger.error(
-        `Failed to send GET /parties to Switch: ${err.message}`,
+        `Failed to send GET /parties to Switch: ${errorDetail}`,
         err.stack,
       );
       // Clean up waiter to prevent leaks
       this.waiterService.clear();
       throw new BadRequestException(
-        `Failed to dispatch party discovery to Switch: ${err.message}`,
+        `Failed to dispatch party discovery to Switch: ${errorDetail}`,
       );
     }
 
     // 3. Await the callback arriving from the Switch
     return await waiterPromise;
   }
+
+  /**
+   * Requests a Quote from the Payee DFSP via Mojaloop Switch
+   * and blocks until the asynchronous PUT /quotes/{id} callback returns.
+   */
+  public async requestQuote(
+    dto: OutboundQuoteRequestDto,
+  ): Promise<QuoteResponsePayload> {
+    const quoteId = randomUUID();
+    const transactionId = randomUUID();
+    const correlationKey = `quote:${quoteId}`;
+
+    this.logger.log(
+      `Initiating Outbound Quote: QuoteID=${quoteId}, Payee=${dto.payeeIdentifier}, Amount=${dto.amount} ${dto.currency}`,
+    );
+
+    // 1. Register a waiter for the incoming asynchronous callback
+    const waiterPromise = this.waiterService.waitFor<QuoteResponsePayload>(
+      correlationKey,
+      this.config.callbackTimeoutMs,
+    );
+
+    // 2. Build standard Mojaloop FSPIOP POST /quotes payload
+    const payload: QuoteRequestPayload = {
+      quoteId,
+      transactionId,
+      payer: {
+        partyIdInfo: {
+          partyIdType: (dto.payerIdType || 'MSISDN').toUpperCase(),
+          partyIdentifier: dto.payerIdentifier,
+          fspId: this.config.dfspId,
+        },
+      },
+      payee: {
+        partyIdInfo: {
+          partyIdType: (dto.payeeIdType || 'MSISDN').toUpperCase(),
+          partyIdentifier: dto.payeeIdentifier,
+          fspId: dto.payeeFsp,
+        },
+      },
+      amountType: dto.amountType || 'SEND',
+      amount: {
+        amount: formatMojaloopAmount(dto.amount),
+        currency: dto.currency,
+      },
+      transactionType: {
+        scenario: 'TRANSFER',
+        initiator: 'PAYER',
+        initiatorType: 'CONSUMER',
+      },
+    };
+
+    // 3. Dispatch POST /quotes to Mojaloop Switch
+    const hubBase = this.config.hubBaseUrl.replace(/\/$/, '');
+    const targetUrl = `${hubBase}/quotes`;
+
+    const headers: Record<string, string> = {
+      [FSPIOP_HEADERS.SOURCE]: this.config.dfspId,
+      [FSPIOP_HEADERS.DESTINATION]: dto.payeeFsp,
+      [FSPIOP_HEADERS.DATE]: new Date().toUTCString(),
+      Accept: FSPIOP_CONTENT_TYPES.QUOTES,
+      'Content-Type': FSPIOP_CONTENT_TYPES.QUOTES,
+    };
+
+    try {
+      this.logger.log(`Sending POST ${targetUrl} (QuoteID: ${quoteId})...`);
+      const res = await firstValueFrom(
+        this.httpService.post(targetUrl, payload, {
+          headers,
+          timeout: this.config.callbackTimeoutMs,
+        }),
+      );
+
+      this.logger.log(
+        `Switch accepted quote request: ${res.status} ${res.statusText}. Waiting for callback...`,
+      );
+    } catch (err: any) {
+      console.error(err);
+      const errorDetail = this.extractErrorMessage(err);
+      this.logger.error(
+        `Failed to send POST /quotes to Switch: ${errorDetail}`,
+        err.stack,
+      );
+      this.waiterService.clear();
+      throw new BadRequestException(
+        `Failed to dispatch quote request to Switch: ${errorDetail}`,
+      );
+    }
+
+    // 4. Await the callback arriving from the Switch
+    return await waiterPromise;
+  }
+
+  /**
+   * Extracts a human-readable and structured error message from Axios errors
+   * returned by the Mojaloop Switch / Testing Toolkit.
+   */
+  private extractErrorMessage(err: any): string {
+    const errorInfo = err?.response?.data?.errorInformation;
+    if (errorInfo?.errorCode && errorInfo?.errorDescription) {
+      return `[${errorInfo.errorCode}] ${errorInfo.errorDescription}`;
+    }
+    return err?.message || 'Unknown error occurred';
+  }
 }
+

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HttpStatus } from '@nestjs/common';
+import { HttpStatus, NotFoundException } from '@nestjs/common';
 import { OutboundController } from './outbound.controller.js';
+
 
 describe('OutboundController', () => {
   it('should call outboundService.lookupParty when client invokes lookup endpoint', async () => {
@@ -87,8 +88,107 @@ describe('OutboundController', () => {
 
     expect(mockWaiterService.reject).toHaveBeenCalledWith(
       'party:MSISDN:0999999999',
-      mockErrorPayload,
+      expect.any(NotFoundException),
+    );
+    expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
+  });
+
+
+  it('should call outboundService.requestQuote when client invokes quote request endpoint', async () => {
+    const mockOutboundService = {
+      requestQuote: vi.fn().mockResolvedValue({
+        transferAmount: { currency: 'USD', amount: '100.00' },
+        condition: 'mock-condition',
+      }),
+    };
+    const mockWaiterService = {
+      resolve: vi.fn(),
+      reject: vi.fn(),
+    };
+
+    const controller = new OutboundController(
+      mockOutboundService as any,
+      mockWaiterService as any,
+    );
+
+    const dto = {
+      payerIdentifier: '0911111111',
+      payeeIdentifier: '0922222222',
+      payeeFsp: 'dfsp-b',
+      amount: '100.00',
+      currency: 'USD',
+    };
+
+    const result = await controller.requestQuote(dto);
+
+    expect(mockOutboundService.requestQuote).toHaveBeenCalledWith(dto);
+    expect(result.transferAmount.amount).toBe('100.00');
+    expect(result.condition).toBe('mock-condition');
+  });
+
+  it('should resolve waiter when PUT /quotes/:id callback arrives from Switch', () => {
+    const mockOutboundService = {
+      requestQuote: vi.fn(),
+    };
+    const mockWaiterService = {
+      resolve: vi.fn().mockReturnValue(true),
+      reject: vi.fn(),
+    };
+
+    const controller = new OutboundController(
+      mockOutboundService as any,
+      mockWaiterService as any,
+    );
+
+    const mockResponse: any = {
+      status: vi.fn().mockReturnThis(),
+      send: vi.fn().mockReturnThis(),
+    };
+
+    const mockPayload: any = {
+      transferAmount: { currency: 'USD', amount: '100.00' },
+      condition: 'mock-condition',
+    };
+
+    controller.handleQuoteCallback('quote-123', mockPayload, mockResponse);
+
+    expect(mockWaiterService.resolve).toHaveBeenCalledWith(
+      'quote:quote-123',
+      mockPayload,
+    );
+    expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
+  });
+
+  it('should reject waiter when PUT /quotes/:id/error callback arrives from Switch', () => {
+    const mockOutboundService = {
+      requestQuote: vi.fn(),
+    };
+    const mockWaiterService = {
+      resolve: vi.fn(),
+      reject: vi.fn().mockReturnValue(true),
+    };
+
+    const controller = new OutboundController(
+      mockOutboundService as any,
+      mockWaiterService as any,
+    );
+
+    const mockResponse: any = {
+      status: vi.fn().mockReturnThis(),
+      send: vi.fn().mockReturnThis(),
+    };
+
+    const mockErrorPayload: any = {
+      errorInformation: { errorCode: '5000', errorDescription: 'Payee inactive' },
+    };
+
+    controller.handleQuoteErrorCallback('quote-999', mockErrorPayload, mockResponse);
+
+    expect(mockWaiterService.reject).toHaveBeenCalledWith(
+      'quote:quote-999',
+      expect.any(Error),
     );
     expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
   });
 });
+

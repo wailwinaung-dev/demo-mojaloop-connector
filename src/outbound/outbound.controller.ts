@@ -3,7 +3,9 @@ import {
   Controller,
   Get,
   HttpStatus,
+  NotFoundException,
   Param,
+  Post,
   Put,
   Query,
   Res,
@@ -13,6 +15,9 @@ import { OutboundService } from './outbound.service.js';
 import { CallbackWaiterService } from './waiter/callback-waiter.service.js';
 import type { PartyResponsePayload } from '../inbound/dto/party.dto.js';
 import type { FspiopErrorPayload } from '../fspiop/errors/fspiop-error.model.js';
+import type { OutboundQuoteRequestDto } from './dto/outbound-quote.dto.js';
+import type { QuoteResponsePayload } from '../inbound/dto/quote.dto.js';
+
 
 @Controller()
 export class OutboundController {
@@ -64,9 +69,66 @@ export class OutboundController {
     @Res() res: Response,
   ): void {
     const correlationKey = `party:${type.toUpperCase()}:${id}`;
-    this.waiterService.reject(correlationKey, body);
+    const desc = body.errorInformation?.errorDescription || 'Party not found';
+    const code = body.errorInformation?.errorCode || '3200';
+
+    this.waiterService.reject(
+      correlationKey,
+      new NotFoundException(`[${code}] ${desc}`),
+    );
 
     // Acknowledge receipt of the error callback to the Switch
     res.status(HttpStatus.OK).send();
   }
+
+
+  /**
+   * Client-facing Synchronous API for requesting a Quote.
+   * Mobile Apps / CBS invoke this endpoint to calculate transfer fees and acquire ILP condition.
+   *
+   * Example: POST /api/quotes/request
+   */
+  @Post('api/quotes/request')
+  public async requestQuote(
+    @Body() dto: OutboundQuoteRequestDto,
+  ): Promise<QuoteResponsePayload> {
+    return await this.outboundService.requestQuote(dto);
+  }
+
+  /**
+   * Inbound Asynchronous Callback Endpoint from Mojaloop Switch (PUT /quotes/{id}).
+   * Resolves the pending quote waiter Promise.
+   */
+  @Put('quotes/:id')
+  public handleQuoteCallback(
+    @Param('id') quoteId: string,
+    @Body() body: QuoteResponsePayload,
+    @Res() res: Response,
+  ): void {
+    const correlationKey = `quote:${quoteId}`;
+    this.waiterService.resolve(correlationKey, body);
+
+    res.status(HttpStatus.OK).send();
+  }
+
+  /**
+   * Inbound Asynchronous Error Callback from Mojaloop Switch (PUT /quotes/{id}/error).
+   */
+  @Put('quotes/:id/error')
+  public handleQuoteErrorCallback(
+    @Param('id') quoteId: string,
+    @Body() body: FspiopErrorPayload,
+    @Res() res: Response,
+  ): void {
+    const correlationKey = `quote:${quoteId}`;
+    this.waiterService.reject(
+      correlationKey,
+      new Error(
+        `Quote rejected by Switch: ${body.errorInformation?.errorDescription || 'Unknown error'}`,
+      ),
+    );
+
+    res.status(HttpStatus.OK).send();
+  }
 }
+
