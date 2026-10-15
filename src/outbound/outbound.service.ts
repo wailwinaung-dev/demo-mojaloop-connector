@@ -71,14 +71,14 @@ export class OutboundService {
         `Switch accepted discovery request: ${res.status} ${res.statusText}. Waiting for callback...`,
       );
     } catch (err: unknown) {
-      const errorDetail = this.extractErrorMessage(err);
+      const exception = mapFspiopErrorToHttpException(err);
       this.logger.error(
-        `Failed to send GET /parties to Switch: ${errorDetail}`,
+        `Failed to send GET /parties to Switch: ${exception.message}`,
         (err as any)?.stack,
       );
       // Clean up waiter to prevent leaks
       this.waiterService.cancel(correlationKey);
-      throw mapFspiopErrorToHttpException(err);
+      throw exception;
     }
 
     // 3. Await the callback arriving from the Switch (starts callbackTimeout countdown)
@@ -158,28 +158,17 @@ export class OutboundService {
         `Switch accepted quote request: ${res.status} ${res.statusText}. Waiting for callback...`,
       );
     } catch (err: unknown) {
-      const errorDetail = this.extractErrorMessage(err);
+      const exception = mapFspiopErrorToHttpException(err);
       this.logger.error(
-        `Failed to send POST /quotes to Switch: ${errorDetail}`,
+        `Failed to send POST /quotes to Switch: ${exception.message}`,
         (err as any)?.stack,
       );
       this.waiterService.cancel(correlationKey);
-      throw mapFspiopErrorToHttpException(err);
+      throw exception;
     }
 
     // 4. Await the callback arriving from the Switch (starts callbackTimeout countdown)
     return await waiter.wait(this.config.callbackTimeoutMs);
   }
-
-  /**
-   * Extracts a human-readable and structured error message from Axios errors
-   * returned by the Mojaloop Switch / Testing Toolkit.
-   */
-  private extractErrorMessage(err: any): string {
-    const errorInfo = err?.response?.data?.errorInformation;
-    if (errorInfo?.errorCode && errorInfo?.errorDescription) {
-      return `[${errorInfo.errorCode}] ${errorInfo.errorDescription}`;
-    }
-    return err?.message || 'Unknown error occurred';
-  }
 }
+
