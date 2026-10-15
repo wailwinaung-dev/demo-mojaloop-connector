@@ -190,5 +190,108 @@ describe('OutboundController', () => {
     );
     expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
   });
+
+  it('should call outboundService.sendTransfer when client invokes transfer send endpoint', async () => {
+    const mockOutboundService = {
+      sendTransfer: vi.fn().mockResolvedValue({
+        transferId: 'transfer-123',
+        transferState: 'COMMITTED',
+        amount: '100',
+        currency: 'USD',
+      }),
+    };
+    const mockWaiterService = {
+      resolve: vi.fn(),
+      reject: vi.fn(),
+    };
+
+    const controller = new OutboundController(
+      mockOutboundService as any,
+      mockWaiterService as any,
+    );
+
+    const dto = {
+      payerIdentifier: '0911111111',
+      payeeIdentifier: '0922222222',
+      payeeFsp: 'dfsp-b',
+      amount: '100.00',
+      currency: 'USD',
+      ilpPacket: 'mock-ilp-packet',
+      condition: 'mock-condition',
+    };
+
+    const result = await controller.sendTransfer(dto);
+
+    expect(mockOutboundService.sendTransfer).toHaveBeenCalledWith(dto);
+    expect(result.transferId).toBe('transfer-123');
+    expect(result.transferState).toBe('COMMITTED');
+  });
+
+  it('should resolve waiter when PUT /transfers/:id callback arrives from Switch', () => {
+    const mockOutboundService = {
+      sendTransfer: vi.fn(),
+    };
+    const mockWaiterService = {
+      resolve: vi.fn().mockReturnValue(true),
+      reject: vi.fn(),
+    };
+
+    const controller = new OutboundController(
+      mockOutboundService as any,
+      mockWaiterService as any,
+    );
+
+    const mockResponse: any = {
+      status: vi.fn().mockReturnThis(),
+      send: vi.fn().mockReturnThis(),
+    };
+
+    const mockPayload: any = {
+      fulfillment: 'mock-fulfillment-preimage',
+      completedTimestamp: '2026-10-15T00:00:00.000Z',
+      transferState: 'COMMITTED',
+    };
+
+    controller.handleTransferCallback('transfer-777', mockPayload, mockResponse);
+
+    expect(mockWaiterService.resolve).toHaveBeenCalledWith(
+      'transfer:transfer-777',
+      mockPayload,
+    );
+    expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
+  });
+
+  it('should reject waiter when PUT /transfers/:id/error callback arrives from Switch', () => {
+    const mockOutboundService = {
+      sendTransfer: vi.fn(),
+    };
+    const mockWaiterService = {
+      resolve: vi.fn(),
+      reject: vi.fn().mockReturnValue(true),
+    };
+
+    const controller = new OutboundController(
+      mockOutboundService as any,
+      mockWaiterService as any,
+    );
+
+    const mockResponse: any = {
+      status: vi.fn().mockReturnThis(),
+      send: vi.fn().mockReturnThis(),
+    };
+
+    const mockErrorPayload: any = {
+      errorInformation: { errorCode: '5100', errorDescription: 'Payer error' },
+    };
+
+    controller.handleTransferErrorCallback('transfer-777', mockErrorPayload, mockResponse);
+
+    expect(mockWaiterService.reject).toHaveBeenCalledWith(
+      'transfer:transfer-777',
+      expect.any(Error),
+    );
+    expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
+  });
 });
+
 

@@ -33,14 +33,12 @@ export interface TransferRequestPayload {
 
 export type TransferState = 'COMMITTED' | 'RESERVED' | 'ABORTED';
 
-/**
- * Outgoing PUT /transfers/{ID} Response Payload according to Mojaloop FSPIOP v1.1.
- */
 export interface TransferResponsePayload {
-  /** 43-character Base64url 32-byte secret fulfillment preimage */
-  fulfillment: string;
+  /** 43-character Base64url 32-byte secret fulfillment preimage (Mojaloop canonical is 'fulfilment') */
+  fulfilment?: string;
+  fulfillment?: string;
   /** ISO timestamp when the transfer completed */
-  completedTimestamp: string;
+  completedTimestamp?: string;
   /** Final state of the transfer (COMMITTED for successful Payee execution) */
   transferState: TransferState;
   /** Optional extension list */

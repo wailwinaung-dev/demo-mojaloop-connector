@@ -364,6 +364,7 @@ export class InboundService {
 
       // 6. Construct Mojaloop FSPIOP v1.1 Transfer Response Payload
       const responsePayload: TransferResponsePayload = {
+        fulfilment: storedRecord.fulfillment,
         fulfillment: storedRecord.fulfillment,
         completedTimestamp: new Date().toISOString(),
         transferState: 'COMMITTED',

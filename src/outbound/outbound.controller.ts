@@ -17,8 +17,11 @@ import type { FspiopErrorPayload } from '../fspiop/errors/fspiop-error.model.js'
 import { mapFspiopErrorToHttpException } from '../fspiop/errors/fspiop-error.mapper.js';
 import type { OutboundQuoteRequestDto } from './dto/outbound-quote.dto.js';
 import type { QuoteResponsePayload } from '../inbound/dto/quote.dto.js';
-
-
+import type {
+  OutboundTransferRequestDto,
+  OutboundTransferResponse,
+} from './dto/outbound-transfer.dto.js';
+import type { TransferResponsePayload } from '../inbound/dto/transfer.dto.js';
 
 @Controller()
 export class OutboundController {
@@ -116,6 +119,51 @@ export class OutboundController {
     @Res() res: Response,
   ): void {
     const correlationKey = `quote:${quoteId}`;
+    const httpException = mapFspiopErrorToHttpException(body);
+    this.waiterService.reject(correlationKey, httpException);
+
+    res.status(HttpStatus.OK).send();
+  }
+
+  /**
+   * Client-facing Synchronous API for executing an Outbound Transfer.
+   * Mobile Apps / CBS invoke this endpoint after a quote is accepted by the customer.
+   *
+   * Example: POST /api/transfers/send
+   */
+  @Post('api/transfers/send')
+  public async sendTransfer(
+    @Body() dto: OutboundTransferRequestDto,
+  ): Promise<OutboundTransferResponse> {
+    return await this.outboundService.sendTransfer(dto);
+  }
+
+  /**
+   * Inbound Asynchronous Callback Endpoint from Mojaloop Switch (PUT /transfers/{id}).
+   * Resolves the pending transfer waiter Promise with the fulfillment preimage.
+   */
+  @Put('transfers/:id')
+  public handleTransferCallback(
+    @Param('id') transferId: string,
+    @Body() body: TransferResponsePayload,
+    @Res() res: Response,
+  ): void {
+    const correlationKey = `transfer:${transferId}`;
+    this.waiterService.resolve(correlationKey, body);
+
+    res.status(HttpStatus.OK).send();
+  }
+
+  /**
+   * Inbound Asynchronous Error Callback from Mojaloop Switch (PUT /transfers/{id}/error).
+   */
+  @Put('transfers/:id/error')
+  public handleTransferErrorCallback(
+    @Param('id') transferId: string,
+    @Body() body: FspiopErrorPayload,
+    @Res() res: Response,
+  ): void {
+    const correlationKey = `transfer:${transferId}`;
     const httpException = mapFspiopErrorToHttpException(body);
     this.waiterService.reject(correlationKey, httpException);
 
