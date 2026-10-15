@@ -28,4 +28,16 @@ export class MojaloopConfigService {
   get quoteExpirySeconds(): number {
     return this.config.quoteExpirySeconds;
   }
+
+  get jwsPrivateKeyPath(): string {
+    return this.config.jwsPrivateKeyPath;
+  }
+
+  get jwsPublicKeyPath(): string {
+    return this.config.jwsPublicKeyPath;
+  }
+
+  get jwsAlgorithm(): string {
+    return this.config.jwsAlgorithm;
+  }
 }

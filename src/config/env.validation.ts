@@ -53,6 +53,16 @@ export class EnvironmentVariables {
   @Min(10)
   @IsOptional()
   QUOTE_EXPIRY_SECONDS: number = 60;
+
+  @IsString()
+  FSPIOP_JWS_PRIVATE_KEY_PATH: string;
+
+  @IsString()
+  FSPIOP_JWS_PUBLIC_KEY_PATH: string;
+
+  @IsString()
+  @IsOptional()
+  FSPIOP_JWS_ALGORITHM: string = 'RS256';
 }
 
 export function validate(config: Record<string, unknown>) {
