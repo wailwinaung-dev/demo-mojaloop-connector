@@ -7,6 +7,7 @@ export const FSPIOP_HEADERS = {
   DESTINATION: 'fspiop-destination',
   HTTP_METHOD: 'fspiop-http-method',
   SIGNATURE: 'fspiop-signature',
+  URI: 'fspiop-uri',
   DATE: 'date',
 } as const;
 

@@ -52,11 +52,17 @@ export class InboundService {
       if (!account) {
         this.logger.warn(`Account not found in CBS: ${type}/${id}`);
         const errorPayload = FspiopErrors.idNotFound(id);
-        await this.callbackClient.sendErrorCallback(
-          `/parties/${type}/${id}/error`,
-          errorPayload,
-          sourceFsp,
-        );
+        try {
+          await this.callbackClient.sendErrorCallback(
+            `/parties/${type}/${id}/error`,
+            errorPayload,
+            sourceFsp,
+          );
+        } catch (callbackErr: any) {
+          this.logger.error(
+            `Failed to deliver error callback for party ${type}/${id}: ${callbackErr.message}`,
+          );
+        }
         return;
       }
 
@@ -66,11 +72,17 @@ export class InboundService {
           `Account is not active in CBS: ${type}/${id} (Status: ${account.status})`,
         );
         const errorPayload = FspiopErrors.idNotActive(id);
-        await this.callbackClient.sendErrorCallback(
-          `/parties/${type}/${id}/error`,
-          errorPayload,
-          sourceFsp,
-        );
+        try {
+          await this.callbackClient.sendErrorCallback(
+            `/parties/${type}/${id}/error`,
+            errorPayload,
+            sourceFsp,
+          );
+        } catch (callbackErr: any) {
+          this.logger.error(
+            `Failed to deliver error callback for party ${type}/${id}: ${callbackErr.message}`,
+          );
+        }
         return;
       }
 
@@ -105,11 +117,17 @@ export class InboundService {
       const genericError = FspiopErrors.genericTransferError(
         'Internal error during account lookup',
       );
-      await this.callbackClient.sendErrorCallback(
-        `/parties/${type}/${id}/error`,
-        genericError,
-        sourceFsp,
-      );
+      try {
+        await this.callbackClient.sendErrorCallback(
+          `/parties/${type}/${id}/error`,
+          genericError,
+          sourceFsp,
+        );
+      } catch (callbackErr: any) {
+        this.logger.error(
+          `Failed to deliver error callback for party ${type}/${id}: ${callbackErr.message}`,
+        );
+      }
     }
   }
 
@@ -243,11 +261,17 @@ export class InboundService {
       const genericError = FspiopErrors.genericQuoteError(
         'Internal error during quote processing',
       );
-      await this.callbackClient.sendErrorCallback(
-        `/quotes/${quoteId}/error`,
-        genericError,
-        sourceFsp,
-      );
+      try {
+        await this.callbackClient.sendErrorCallback(
+          `/quotes/${quoteId}/error`,
+          genericError,
+          sourceFsp,
+        );
+      } catch (callbackErr: any) {
+        this.logger.error(
+          `Failed to deliver error callback for quote ${quoteId}: ${callbackErr.message}`,
+        );
+      }
     }
   }
 
@@ -351,11 +375,17 @@ export class InboundService {
         const errorPayload = FspiopErrors.genericTransferError(
           `CBS Credit failed: ${cbsErr.message}`,
         );
-        await this.callbackClient.sendErrorCallback(
-          `/transfers/${transferId}/error`,
-          errorPayload,
-          sourceFsp,
-        );
+        try {
+          await this.callbackClient.sendErrorCallback(
+            `/transfers/${transferId}/error`,
+            errorPayload,
+            sourceFsp,
+          );
+        } catch (callbackErr: any) {
+          this.logger.error(
+            `Failed to deliver error callback for transfer ${transferId}: ${callbackErr.message}`,
+          );
+        }
         return;
       }
 
@@ -388,11 +418,17 @@ export class InboundService {
       const genericError = FspiopErrors.genericTransferError(
         'Internal error during transfer execution',
       );
-      await this.callbackClient.sendErrorCallback(
-        `/transfers/${transferId}/error`,
-        genericError,
-        sourceFsp,
-      );
+      try {
+        await this.callbackClient.sendErrorCallback(
+          `/transfers/${transferId}/error`,
+          genericError,
+          sourceFsp,
+        );
+      } catch (callbackErr: any) {
+        this.logger.error(
+          `Failed to deliver error callback for transfer ${transferId}: ${callbackErr.message}`,
+        );
+      }
     }
   }
 }

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { basename, extname, isAbsolute, resolve } from 'node:path';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { MojaloopConfigService } from '../../config/mojaloop-config.service.js';
 
@@ -58,6 +58,49 @@ export class KeystoreService implements OnModuleInit {
     this.logger.log(
       `Loaded JWS RSA key pair successfully from file paths. Algorithm: ${this.getJwsAlgorithm()}`,
     );
+
+    this.loadPeerKeys();
+  }
+
+  /**
+   * Automatically discovers and loads peer DFSP / Switch public keys or certificates
+   * from the certs/jws/peers directory.
+   */
+  public loadPeerKeys(peersDirectory?: string): void {
+    const peersPath = peersDirectory || './certs/jws/peers';
+    const resolvedPeersPath = isAbsolute(peersPath)
+      ? peersPath
+      : resolve(process.cwd(), peersPath);
+
+    if (!existsSync(resolvedPeersPath)) {
+      this.logger.debug(
+        `Peer keys directory does not exist: ${resolvedPeersPath}. Skipping peer key auto-loading.`,
+      );
+      return;
+    }
+
+    const files = readdirSync(resolvedPeersPath);
+    for (const file of files) {
+      const ext = extname(file).toLowerCase();
+      if (['.pem', '.cer', '.crt', '.key'].includes(ext)) {
+        const dfspId = basename(file, ext);
+        const fullFilePath = resolve(resolvedPeersPath, file);
+        try {
+          const content = readFileSync(fullFilePath, 'utf8').trim();
+          if (content) {
+            this.registerPeerJwsPublicKey(dfspId, content);
+            this.logger.log(
+              `Auto-loaded peer JWS key for DFSP '${dfspId}' from ${file}`,
+            );
+          }
+        } catch (err: unknown) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          this.logger.warn(
+            `Failed to read peer key file ${file}: ${errorMsg}`,
+          );
+        }
+      }
+    }
   }
 
   /**

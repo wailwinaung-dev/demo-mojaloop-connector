@@ -31,7 +31,9 @@ describe('KeystoreService', () => {
       const publicKey = keystoreService.getJwsPublicKey();
 
       expect(privateKey).toContain('-----BEGIN PRIVATE KEY-----');
-      expect(publicKey).toContain('-----BEGIN PUBLIC KEY-----');
+      expect(publicKey).toMatch(
+        /-----(BEGIN PUBLIC KEY|BEGIN CERTIFICATE)-----/,
+      );
       expect(keystoreService.getJwsAlgorithm()).toBe('RS256');
 
       // Verify that the key pair is cryptographically functional

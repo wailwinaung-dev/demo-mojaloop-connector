@@ -6,14 +6,17 @@ import {
   Param,
   Post,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FspiopHeaders, type FspiopInboundHeaders } from '../fspiop/index.js';
+import { JwsVerificationGuard } from '../security/jws/jws-verification.guard.js';
 import { InboundService } from './inbound.service.js';
 import type { QuoteRequestPayload } from './dto/quote.dto.js';
 import type { TransferRequestPayload } from './dto/transfer.dto.js';
 
 @Controller()
+@UseGuards(JwsVerificationGuard)
 export class InboundController {
   constructor(private readonly inboundService: InboundService) {}
 

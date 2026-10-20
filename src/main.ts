@@ -7,7 +7,14 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     instrument: ObserveInstrument,
   });
-  app.use(express.json({ type: ['application/json', 'application/*+json'] }));
+  app.use(
+    express.json({
+      type: ['application/json', 'application/*+json'],
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
