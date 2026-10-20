@@ -1,0 +1,132 @@
+{
+  "info": {
+    "name": "Mojaloop Payer Flow (Connector)",
+    "description": "Complete 3-step Outbound Payer flow: Discovery -> Quote Agreement -> 2PC Transfer Execution",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "payerMsisdn", "value": "0911111111" },
+    { "key": "payeeMsisdn", "value": "0988888888" },
+    { "key": "payeeFsp", "value": "testingtoolkitdfsp" },
+    { "key": "amount", "value": "100.00" },
+    { "key": "currency", "value": "USD" },
+    { "key": "condition", "value": "" },
+    { "key": "ilpPacket", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Step 1: Party Discovery (Lookup)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200 OK', () => {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "const res = pm.response.json();",
+              "if (res.party && res.party.partyIdInfo && res.party.partyIdInfo.fspId) {",
+              "    pm.collectionVariables.set('payeeFsp', res.party.partyIdInfo.fspId);",
+              "    console.log('Detected Payee FSP:', res.party.partyIdInfo.fspId);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/parties/lookup?type=MSISDN&id={{payeeMsisdn}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "parties", "lookup"],
+          "query": [
+            { "key": "type", "value": "MSISDN" },
+            { "key": "id", "value": "{{payeeMsisdn}}" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Step 2: Quote Agreement",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Quote Accepted (200/201)', () => {",
+              "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+              "});",
+              "const res = pm.response.json();",
+              "if (res.condition) {",
+              "    pm.collectionVariables.set('condition', res.condition);",
+              "    console.log('Saved Condition:', res.condition);",
+              "}",
+              "if (res.ilpPacket) {",
+              "    pm.collectionVariables.set('ilpPacket', res.ilpPacket);",
+              "    console.log('Saved ILP Packet:', res.ilpPacket);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"payerIdentifier\": \"{{payerMsisdn}}\",\n  \"payerIdType\": \"MSISDN\",\n  \"payeeIdentifier\": \"{{payeeMsisdn}}\",\n  \"payeeIdType\": \"MSISDN\",\n  \"payeeFsp\": \"{{payeeFsp}}\",\n  \"amount\": \"{{amount}}\",\n  \"currency\": \"{{currency}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/quotes/request",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "quotes", "request"]
+        }
+      }
+    },
+    {
+      "name": "Step 3: Transfer Send (2PC Execution)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Transfer COMMITTED (200/201)', () => {",
+              "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+              "});",
+              "const res = pm.response.json();",
+              "pm.test('Transfer State is COMMITTED', () => {",
+              "    pm.expect(res.transferState).to.equal('COMMITTED');",
+              "});",
+              "pm.test('Has valid cryptographic fulfillment', () => {",
+              "    pm.expect(res.fulfillment).to.be.a('string');",
+              "    pm.expect(res.fulfillment.length).to.be.greaterThan(0);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"payerIdentifier\": \"{{payerMsisdn}}\",\n  \"payerIdType\": \"MSISDN\",\n  \"payeeIdentifier\": \"{{payeeMsisdn}}\",\n  \"payeeIdType\": \"MSISDN\",\n  \"payeeFsp\": \"{{payeeFsp}}\",\n  \"amount\": \"{{amount}}\",\n  \"currency\": \"{{currency}}\",\n  \"condition\": \"{{condition}}\",\n  \"ilpPacket\": \"{{ilpPacket}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/transfers/send",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "transfers", "send"]
+        }
+      }
+    }
+  ]
+}
