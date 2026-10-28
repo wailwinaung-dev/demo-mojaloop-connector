@@ -1,5 +1,6 @@
-import { plainToInstance } from 'class-transformer';
+import { Transform, plainToInstance } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -63,6 +64,40 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   FSPIOP_JWS_ALGORITHM: string = 'RS256';
+
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  @IsOptional()
+  TLS_ENABLED?: boolean = false;
+
+  @IsString()
+  @IsOptional()
+  TLS_SERVER_KEY_PATH?: string;
+
+  @IsString()
+  @IsOptional()
+  TLS_SERVER_CERT_PATH?: string;
+
+  @IsString()
+  @IsOptional()
+  TLS_SERVER_CA_PATH?: string;
+
+  @IsString()
+  @IsOptional()
+  TLS_CLIENT_KEY_PATH?: string;
+
+  @IsString()
+  @IsOptional()
+  TLS_CLIENT_CERT_PATH?: string;
+
+  @IsString()
+  @IsOptional()
+  TLS_CLIENT_CA_PATH?: string;
+
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  @IsOptional()
+  HUB_TLS_REJECT_UNAUTHORIZED?: boolean = false;
 }
 
 export function validate(config: Record<string, unknown>) {

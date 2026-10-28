@@ -29,12 +29,12 @@
             "ID": "0911111111"
           },
           "headers": {
-            "FSPIOP-Source": "testingtoolkitdfsp",
-            "FSPIOP-Destination": "dfsp-b",
-            "Accept": "application/vnd.interoperability.parties+json;version=1.1",
-            "Content-Type": "application/vnd.interoperability.parties+json;version=1.1"
+            "fspiop-source": "testingtoolkitdfsp",
+            "fspiop-destination": "dfsp-b",
+            "accept": "application/vnd.interoperability.parties+json;version=1.1",
+            "content-type": "application/vnd.interoperability.parties+json;version=1.1"
           },
-          "url": "http://host.docker.internal:3000",
+          "url": "https://host.docker.internal:3000",
           "tests": {
             "assertions": [
               {
@@ -67,10 +67,10 @@
           "path": "/quotes",
           "method": "post",
           "headers": {
-            "FSPIOP-Source": "testingtoolkitdfsp",
-            "FSPIOP-Destination": "dfsp-b",
-            "Accept": "application/vnd.interoperability.quotes+json;version=1.1",
-            "Content-Type": "application/vnd.interoperability.quotes+json;version=1.1"
+            "fspiop-source": "testingtoolkitdfsp",
+            "fspiop-destination": "dfsp-b",
+            "accept": "application/vnd.interoperability.quotes+json;version=1.1",
+            "content-type": "application/vnd.interoperability.quotes+json;version=1.1"
           },
           "body": {
             "quoteId": "a1111111-2222-3333-4444-555555555555",
@@ -100,7 +100,7 @@
               "initiatorType": "CONSUMER"
             }
           },
-          "url": "http://host.docker.internal:3000",
+          "url": "https://host.docker.internal:3000",
           "tests": {
             "assertions": [
               {
@@ -134,10 +134,10 @@
           "path": "/transfers",
           "method": "post",
           "headers": {
-            "FSPIOP-Source": "testingtoolkitdfsp",
-            "FSPIOP-Destination": "dfsp-b",
-            "Accept": "application/vnd.interoperability.transfers+json;version=1.1",
-            "Content-Type": "application/vnd.interoperability.transfers+json;version=1.1"
+            "fspiop-source": "testingtoolkitdfsp",
+            "fspiop-destination": "dfsp-b",
+            "accept": "application/vnd.interoperability.transfers+json;version=1.1",
+            "content-type": "application/vnd.interoperability.transfers+json;version=1.1"
           },
           "body": {
             "transferId": "c1111111-2222-3333-4444-555555555555",
@@ -151,7 +151,7 @@
             "condition": "{$prev.2.callback.body.condition}",
             "expiration": "2026-10-14T10:00:00.000Z"
           },
-          "url": "http://host.docker.internal:3000",
+          "url": "https://host.docker.internal:3000",
           "tests": {
             "assertions": [
               {

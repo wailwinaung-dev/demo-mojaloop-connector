@@ -40,4 +40,36 @@ export class MojaloopConfigService {
   get jwsAlgorithm(): string {
     return this.config.jwsAlgorithm;
   }
+
+  get tlsEnabled(): boolean {
+    return this.config.tlsEnabled;
+  }
+
+  get tlsServerKeyPath(): string {
+    return this.config.tlsServerKeyPath;
+  }
+
+  get tlsServerCertPath(): string {
+    return this.config.tlsServerCertPath;
+  }
+
+  get tlsServerCaPath(): string {
+    return this.config.tlsServerCaPath;
+  }
+
+  get tlsClientKeyPath(): string {
+    return this.config.tlsClientKeyPath;
+  }
+
+  get tlsClientCertPath(): string {
+    return this.config.tlsClientCertPath;
+  }
+
+  get tlsClientCaPath(): string {
+    return this.config.tlsClientCaPath;
+  }
+
+  get hubTlsRejectUnauthorized(): boolean {
+    return this.config.hubTlsRejectUnauthorized;
+  }
 }

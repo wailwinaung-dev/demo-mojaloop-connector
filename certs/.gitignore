@@ -1,4 +1,6 @@
 *.pem
 *.key
 *.crt
+*.csr
+*.srl
 !certs/.gitkeep
