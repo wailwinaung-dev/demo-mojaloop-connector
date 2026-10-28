@@ -1,118 +1,169 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Mojaloop DFSP Connector (NestJS Demo)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A hands-on implementation of a **Mojaloop DFSP (Digital Financial Services Provider) Connector** built with **NestJS** and **TypeScript**. 
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+I built this project as a practical proof-of-concept to deeply explore how a financial institution (Bank / MFI / Mobile Wallet) integrates with the **Mojaloop National Switch** using the **FSPIOP v1.1** specification — focusing on the actual cryptographic and networking layers (bidirectional mTLS, JWS signing, ILP packets, and 2-Phase Commit transfers).
 
-## Description
+---
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## 💡 What's Inside
 
-## Project setup
+- **Complete 3-Step Flow (FSPIOP v1.1):**
+  - **Discovery:** Party / Account lookup (`GET /parties`, `PUT /parties`)
+  - **Agreement:** Quote calculation & ILP Condition negotiation (`POST /quotes`, `PUT /quotes`)
+  - **Execution:** Transfer execution with cryptographic fulfillment (`POST /transfers`, `PUT /transfers`)
+- **Security & Cryptography:**
+  - **Mutual TLS (mTLS):** Inbound HTTPS server certificate validation (`serverAuth` / `clientAuth`) and outbound client certificate handling.
+  - **JWS (JSON Web Signature):** Request signing via Axios interceptors and inbound cryptographic signature verification guards (`RS256`).
+  - **ILP (Interledger Protocol):** SHA-256 Condition generation and Fulfillment preimage verification.
+- **2-Phase Commit (2PC) & CBS Simulator:**
+  - In-memory mock Core Banking System (CBS) with balance reservation (hold) on initiation, followed by commit or rollback depending on Switch response.
+- **Async Callback Correlation:**
+  - An in-memory callback waiter that bridges Mojaloop's asynchronous Pub/Sub callback model with synchronous REST APIs for client apps.
 
-```bash
-$ npm install
+---
+
+## 🏗 Architecture Flow
+
+```
+[ Client / Mobile App ]
+         │
+         ▼ (Sync REST)
+┌─────────────────────────────────────────────────────────┐
+│              Mojaloop Connector (NestJS)                │
+│                                                         │
+│  1. Outbound Controller (/api/...)                      │
+│  2. CBS Service (Hold Alice's funds)                    │
+│  3. Callback Waiter Engine                              │
+│  4. Security Layer (mTLS Agent + JWS RS256 Signer)      │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+                           ▼ (Async mTLS + JWS)
+┌─────────────────────────────────────────────────────────┐
+│            Mojaloop Switch / Testing Toolkit            │
+│                 (Port :4040 / :3000)                    │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## Compile and run the project
+---
 
+## 🚀 Quick Start
+
+### 1. Requirements
+- Node.js `>= 20`
+- OpenSSL (for generating test keys & certificates)
+
+### 2. Setup
 ```bash
-# development
-$ npm run start
+# Clone the repository
+git clone https://github.com/<your-username>/mojaloop-connector.git
+cd mojaloop-connector
 
-# watch mode
-$ npm run start:dev
+# Install dependencies
+npm install
 
-# production mode
-$ npm run start:prod
+# Setup environment
+cp .env.example .env
 ```
 
-## Run tests
+### 3. Generate Keys & Certificates (Local Testing)
 
 ```bash
-# unit tests
-$ npm run test
+# JWS RSA Key Pair
+mkdir -p certs/jws
+openssl genrsa -out certs/jws/dfsp-jws-private.pem 2048
+openssl rsa -in certs/jws/dfsp-jws-private.pem -pubout -out certs/jws/dfsp-jws-public.pem
 
-# e2e tests
-$ npm run test:e2e
+# Local mTLS Certificates
+mkdir -p certs/tls/server certs/tls/client
+openssl req -x509 -newkey rsa:4096 -days 3650 -nodes \
+  -keyout certs/tls/server/dfsp_ca.key -out certs/tls/server/dfsp_ca.crt \
+  -subj "/C=MM/O=DFSP-B/CN=DFSP-B-CA"
 
-# test coverage
-$ npm run test:cov
+openssl req -new -newkey rsa:2048 -nodes \
+  -keyout certs/tls/server/server.key -out certs/tls/server/server.csr \
+  -subj "/C=MM/O=DFSP-B/CN=localhost"
+openssl x509 -req -in certs/tls/server/server.csr \
+  -CA certs/tls/server/dfsp_ca.crt -CAkey certs/tls/server/dfsp_ca.key -CAcreateserial \
+  -out certs/tls/server/server.crt -days 365 -sha256 \
+  -extfile <(echo -e "extendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1")
+
+# Client Certificate for curl / Postman
+openssl req -new -newkey rsa:2048 -nodes \
+  -keyout certs/tls/test-client.key -out certs/tls/test-client.csr \
+  -subj "/C=MM/O=DFSP-B/CN=test-client"
+openssl x509 -req -in certs/tls/test-client.csr \
+  -CA certs/tls/server/dfsp_ca.crt -CAkey certs/tls/server/dfsp_ca.key -CAcreateserial \
+  -out certs/tls/test-client.crt -days 365 -sha256 \
+  -extfile <(echo "extendedKeyUsage=clientAuth")
 ```
 
-## Deployment
+### 4. Run the Server
+```bash
+# Development mode
+npm run start:dev
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+# Run unit tests
+npm test
+```
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+---
+
+## 🧪 Testing the Flows
+
+### Method A: Outbound Payer Flow (via curl)
+
+Pre-seeded account: **Alice** (`0911111111`) with **$1,000 USD** balance.
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Step 1: Lookup Payee
+curl -k --cert certs/tls/test-client.crt --key certs/tls/test-client.key \
+  "https://localhost:3000/api/parties/lookup?type=MSISDN&id=0988888888"
+
+# Step 2: Request Quote
+curl -k --cert certs/tls/test-client.crt --key certs/tls/test-client.key \
+  -X POST https://localhost:3000/api/quotes/request \
+  -H "Content-Type: application/json" \
+  -d '{
+    "payerIdentifier": "0911111111",
+    "payeeIdentifier": "0988888888",
+    "payeeFsp": "testingtoolkitdfsp",
+    "amount": "50.00",
+    "currency": "USD"
+  }'
+
+# Step 3: Send Transfer (with condition & ilpPacket from Step 2)
+curl -k --cert certs/tls/test-client.crt --key certs/tls/test-client.key \
+  -X POST https://localhost:3000/api/transfers/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "payerIdentifier": "0911111111",
+    "payeeIdentifier": "0988888888",
+    "payeeFsp": "testingtoolkitdfsp",
+    "amount": "50.00",
+    "currency": "USD",
+    "condition": "<CONDITION_FROM_STEP_2>",
+    "ilpPacket": "<ILP_PACKET_FROM_STEP_2>"
+  }'
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### Method B: Postman Collection
+Import [`mojaloop-payer-outbound.postman_collection.json`](./mojaloop-payer-outbound.postman_collection.json) into Postman, set the client certificate under **Settings > Certificates**, and run the requests in order.
 
-## Observability
+### Method C: Inbound Payee Flow (Mojaloop TTK)
+Import [`ttk-full-p2p.json`](./ttk-full-p2p.json) into Mojaloop Testing Toolkit (TTK) to test incoming discovery, quote, and transfer callbacks against this connector.
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+---
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+## 📂 Project Structure
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-This project is already instrumented. Create a free account at [observe.nestjs.com](https://observe.nestjs.com), add an application, and paste the generated app key and secret into the `ObserveModule.forRoot()` call in `src/app.module.ts`.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```
+src/
+├── cbs/            # Mock Core Banking System (Account Ledger, 2PC Holds)
+├── config/         # Environment variables & Joi schema validation
+├── fspiop/         # FSPIOP headers, error mapping, and ILP crypto utilities
+├── inbound/        # Inbound Mojaloop endpoints (Connector as Payee)
+├── outbound/       # Client REST APIs & Async Callback Waiter (Connector as Payer)
+├── security/       # mTLS setup, JWS interceptor, and verification guard
+└── main.ts         # NestJS entry point with HTTPS mTLS configuration
+```
